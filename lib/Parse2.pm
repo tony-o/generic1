@@ -4,9 +4,20 @@ use lib 'lib';
 use XML::LibXML::Reader;
 use Try::Tiny;
 use v5.18;
+ 
+sub upload {
+  my ($rfc, $hash) = @_;
+  if (defined $rfc && $rfc->is_connected) {
+    try {
+      my $it = $rfc->discover('RSDRI_ODSO_INSERT_RFC');
+      $it->IODSOBJECT = 'ZRPA_O10';
+      $rfc->callrfc($it);
+    };
+  }
+};
 
 sub parse {
-  my ($file) = @_;
+  my ($rfc, $file) = @_;
   my $parser = XML::LibXML->new;
   my $dom    = $parser->parse_file($file);
    
@@ -53,37 +64,39 @@ sub parse {
         }
       }
     };
+    my $uflag = 0;
     for my $line (@{$transaction->getElementsByTagName('RetailTransaction')->[0]->getElementsByTagName('LineItem')}) {
+      $uflag = 0;
+      my $cp = {%$template};
       if (scalar(@{$line->getElementsByTagName('Tender')}) > 0) {
-        my $cp = {%$template};
         $cp->{SequenceNumber} = $line->getElementsByTagName('SequenceNumber')->[0]->textContent;
         $cp->{Price} = $line->getElementsByTagName('SequenceNumber')->[0]->textContent;
         $cp->{Material} = $line->getElementsByTagName('SequenceNumber')->[0]->textContent;
         $cp->{TenderID} = $line->getElementsByTagName('SequenceNumber')->[0]->textContent;
         $cp->{PaymentDirection} = $cp->{PRICE} > 0 ? 'O' : 'I';
+        $uflag++;
         $tender++;
       }
       if (scalar(@{$line->getElementsByTagName('Sale')}) > 0) {
-        my $cp                = {%$template};
         $cp->{SequenceNumber} = $line->getElementsByTagName('SequenceNumber')->[0]->textContent;
         $cp->{Material}       = $line->getElementsByTagName('Sale')->[0]->getElementsByTagName('ItemID')->[0]->textContent || '';
         $cp->{Quantity}       = $line->getElementsByTagName('Sale')->[0]->getElementsByTagName('Quantity')->[0]->textContent;
         $cp->{Price}          = $line->getElementsByTagName('Sale')->[0]->getElementsByTagName('ExtendedAmount')->[0]->textContent;
         $cp->{Discount}       = $line->getElementsByTagName('Sale')->[0]->getElementsByTagName('ExtendedDiscountAmount')->[0]->textContent;
         $cp->{EntryMethod}    = $line->getElementsByTagName('EntryMethod')->[0]->textContent if scalar(@{$line->getElementsByTagName('EntryMethod')}) > 0;
+        $uflag++;
         $sale++;
       }
       if($line->getElementsByTagName('Tax')->[0]){
-        my $cp                = {%$template};
         $cp->{SequenceNumber} = $line->getElementsByTagName('SequenceNumber')->[0]->textContent;
         $cp->{TaxableAmount}  = $line->getElementsByTagName('Tax')->[0]->getElementsByTagName('TaxableAmount')->[0]->textContent;
         $cp->{Price}          = $line->getElementsByTagName('Tax')->[0]->getElementsByTagName('Amount')->[0]->textContent;
         $cp->{Material}       = 'TAX';
         $cp->{EntryMethod}    = $line->getElementsByTagName('EntryMethod')->[0] || '';
+        $uflag++;
         $tax++;
       }
       if($line->getElementsByTagName('LoyaltyReward')->[0] && ($line->getElementsByTagName('LoyaltyReward')->[0]->{'acs:RewardType'} eq 'PercentOff' || $line->getElementsByTagName('LoyaltyReward')->[0]->{'acs:RewardType'} eq 'AmountOff')){
-        my $cp                = {%$template};
         $cp->{SequenceNumber} = $line->getElementsByTagName('SequenceNumber')->[0]->textContent;
         $cp->{Material}       = $line->getElementsByTagName('LoyaltyReward')->[0]->getElementsByTagName('acs:RewardBasis')->[0]->getElementsByTagName('acs:ItemID')->[0]->textContent || '';
         $cp->{Discount}       = $line->getElementsByTagName('LoyaltyReward')->[0]->getElementsByTagName('acs:ExtendedRewardAmount')->[0]->textContent;
@@ -91,8 +104,10 @@ sub parse {
         $cp->{RewardLevel}    = $line->getElementsByTagName('LoyaltyReward')->[0]->getElementsByTagName('acs:RewardLevel')->[0]->textContent;
         $cp->{RewardCategory} = $line->getElementsByTagName('LoyaltyReward')->[0]->getElementsByTagName('acs:RewardCategory')->[0]->textContent;
         $cp->{EntryMethod}    = $line->getElementsByTagName('EntryMethod')->[0] || '';
+        $uflag++;
         $loyal++;
       }
+      upload($rfc, \$cp) if $uflag > 0;
     }
   }
 }
